@@ -1,0 +1,90 @@
+import json
+import pandas as pd
+from collections import defaultdict
+from datetime import datetime
+
+# Load the transaction data from a JSON file
+with open("/home/ubuntu/Downloads/user-wallet-transactions.json") as f:
+    data = json.load(f)
+
+# Group transactions by wallet
+wallet_transactions = defaultdict(list)
+for tx in data:
+    wallet = tx['userWallet']
+    timestamp = datetime.utcfromtimestamp(tx['timestamp'])
+    action = tx['action']
+    
+    # Normalize amount depending on token type (simplified: 6 or 18 decimals)
+    amount = float(tx['actionData']['amount'])
+    symbol = tx['actionData']['assetSymbol']
+    if symbol in ["USDC", "USDT"]:
+        amount /= 1e6
+    else:
+        amount /= 1e18
+    
+    usd_value = amount * float(tx['actionData'].get('assetPriceUSD', 1.0))
+    
+    wallet_transactions[wallet].append({
+        'timestamp': timestamp,
+        'action': action,
+        'usd': usd_value
+    })
+
+# Calculate features and credit scores for each wallet
+wallet_scores = []
+for wallet, txs in wallet_transactions.items():
+    actions = [tx['action'] for tx in txs]
+    usd_by_action = defaultdict(float)
+    counts_by_action = defaultdict(int)
+    timestamps = []
+
+    for tx in txs:
+        usd_by_action[tx['action']] += tx['usd']
+        counts_by_action[tx['action']] += 1
+        timestamps.append(tx['timestamp'])
+
+    timestamps.sort()
+    lifetime_days = (timestamps[-1] - timestamps[0]).days + 1 if timestamps else 1
+    tx_per_month = len(timestamps) / max(1, lifetime_days / 30)
+
+    total_deposit = usd_by_action['deposit']
+    total_borrow = usd_by_action['borrow']
+    total_repay = usd_by_action['repay']
+    total_liquidations = counts_by_action['liquidationcall']
+
+    repay_ratio = total_repay / total_borrow if total_borrow > 0 else 0
+    borrow_ratio = total_borrow / total_deposit if total_deposit > 0 else 0
+
+    # Start from perfect score
+    score = 1000
+
+    # Penalize risky behavior
+    score -= min(300, total_liquidations * 100)
+    if borrow_ratio > 2:
+        score -= 200
+    if repay_ratio < 0.5:
+        score -= 100
+    if counts_by_action['repay'] == 0:
+        score -= 100
+
+    # Reward good behavior
+    score += min(100, total_deposit / 1000)
+    score += min(100, tx_per_month * 5)
+
+    # Clamp score between 0 and 1000
+    score = max(0, min(1000, score))
+
+    wallet_scores.append({
+        'wallet': wallet,
+        'total_deposit': total_deposit,
+        'total_borrow': total_borrow,
+        'total_repay': total_repay,
+        'repay_to_borrow': round(repay_ratio, 2),
+        'borrow_to_deposit': round(borrow_ratio, 2),
+        'liquidations': total_liquidations,
+        'tx_per_month': round(tx_per_month, 2),
+        'credit_score': int(score)
+    })
+
+df = pd.DataFrame(wallet_scores)
+df.to_csv("wallet-scores.csv", index=False)

@@ -36,7 +36,7 @@ To evaluate the reliability of each wallet on the Aave V2 protocol, a set of beh
   - Up to `+100` for high transaction frequency (`min(100, tx_per_month * 5)`)
 - **Final score** is clamped between 0 and 1000
 
-**Run the scrip**
+**Run the script**
 
 git clone https://github.com/AswathyBalan/User_wallet_transactions.git
 

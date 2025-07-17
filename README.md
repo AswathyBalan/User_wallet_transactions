@@ -5,6 +5,7 @@
 #Prerequisites
 
 Python 3.8 or higher
+
 Required libraries :
 pip install matplotlib seaborn
 pip install numpy scikit-learn
